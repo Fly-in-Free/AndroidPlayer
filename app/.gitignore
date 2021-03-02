@@ -1,0 +1,4 @@
+/build
+
+# ignore local assets as demo videos are not copyrighted
+/src/main/assets
