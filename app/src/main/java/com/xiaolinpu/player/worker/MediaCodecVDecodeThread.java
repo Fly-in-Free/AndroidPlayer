@@ -1,5 +1,6 @@
 package com.xiaolinpu.player.worker;
 
+import android.content.res.AssetFileDescriptor;
 import android.media.MediaCodec;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
@@ -9,14 +10,15 @@ import android.view.Surface;
 
 import androidx.annotation.IntRange;
 import androidx.annotation.NonNull;
+import androidx.annotation.RequiresApi;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class MediaCodecDecodeThread extends Thread {
+public class MediaCodecVDecodeThread extends Thread {
 
-    public static final String TAG = "MCDThread";
+    public static final String TAG = "VideoMCDThread";
     public static final boolean VERBOSE_LOG = false;
     private static AtomicInteger sCount = new AtomicInteger(0);
 
@@ -26,13 +28,15 @@ public class MediaCodecDecodeThread extends Thread {
     private MediaFormat format;
     private MediaCodec codec;
 
-    public MediaCodecDecodeThread(
-            @NonNull MediaExtractor extractor,
+    @RequiresApi(api = Build.VERSION_CODES.N)
+    public MediaCodecVDecodeThread(
+            @NonNull AssetFileDescriptor afd,
             @IntRange(from = 0) int trackNumber,
             @NonNull Surface outputSurface
     ) throws IOException {
         super(TAG + "#" + sCount.incrementAndGet());
-        this.extractor = extractor;
+        this.extractor = new MediaExtractor();
+        this.extractor.setDataSource(afd);
         this.trackNumber = trackNumber;
         this.outputSurface = outputSurface;
         readExtractorInfo();
@@ -67,6 +71,7 @@ public class MediaCodecDecodeThread extends Thread {
     @Override
     public void run() {
         boolean eof = false;
+        long startMs = System.currentTimeMillis();
         MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
         codec.start();
         android.util.Log.d(TAG, "run, codec started");
@@ -81,6 +86,7 @@ public class MediaCodecDecodeThread extends Thread {
                     android.util.Log.d(TAG, "run, buffer == null");
                     continue;
                 }
+                buffer.clear();
                 int read = extractor.readSampleData(buffer, 0);
                 if (read < 0) {
                     android.util.Log.d(TAG, "run, EOF as read = " + read);
@@ -96,10 +102,21 @@ public class MediaCodecDecodeThread extends Thread {
                 }
                 int outBufferId = codec.dequeueOutputBuffer(bufferInfo, 10000);
                 if (VERBOSE_LOG) {
-                    android.util.Log.d(TAG, "run, output buffer id: " + outBufferId + ", info: " + bufferInfo);
+                    android.util.Log.d(TAG, "run, output buffer id: " + outBufferId);
                 }
                 if (outBufferId > 0) {
                     codec.releaseOutputBuffer(outBufferId, true);
+                }
+                long diff = bufferInfo.presentationTimeUs / 1000L - (System.currentTimeMillis() - startMs);
+                if (diff > 0) {
+                    try {
+                        if (VERBOSE_LOG) {
+                            android.util.Log.d(TAG, "run, ahead of presentation, sleep ms: " + diff);
+                        }
+                        sleep(diff);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                 }
             }
         }

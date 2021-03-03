@@ -4,11 +4,8 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.content.res.AssetFileDescriptor;
-import android.content.res.AssetManager;
-import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
-import android.media.MediaExtractor;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -16,20 +13,19 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
 import com.xiaolinpu.player.R;
-import com.xiaolinpu.player.worker.MediaCodecDecodeThread;
+import com.xiaolinpu.player.worker.MediaCodecADecodeThread;
+import com.xiaolinpu.player.worker.MediaCodecVDecodeThread;
 
-import java.io.FileDescriptor;
 import java.io.IOException;
-import java.io.InputStream;
 
 public class MediaCodecActivity extends AppCompatActivity implements SurfaceHolder.Callback {
 
     public static final String TAG = "MediaCodecActivity";
 
     private SurfaceView videoSurface;
-    private MediaExtractor extractor;
     private MediaCodecList codecList;
-    private MediaCodecDecodeThread decodeThread;
+    private MediaCodecVDecodeThread decodeThread;
+    private MediaCodecADecodeThread audioThread;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -37,7 +33,6 @@ public class MediaCodecActivity extends AppCompatActivity implements SurfaceHold
         setContentView(R.layout.activity_media_codec);
 
         getMediaCodecList();
-        initMedia();
         videoSurface = findViewById(R.id.video_surface);
         videoSurface.getHolder().addCallback(this);
     }
@@ -45,22 +40,6 @@ public class MediaCodecActivity extends AppCompatActivity implements SurfaceHold
     @Override
     protected void onResume() {
         super.onResume();
-    }
-
-    private void initMedia() {
-        extractor = new MediaExtractor();
-        try {
-            AssetFileDescriptor afd = getAssets().openFd("video.mp4");
-            Log.d(TAG, "file: " + afd.toString());
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                extractor.setDataSource(afd);
-            } else {
-                extractor.setDataSource(afd.getFileDescriptor());
-            }
-            afd.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
 
     private void getMediaCodecList() {
@@ -77,12 +56,20 @@ public class MediaCodecActivity extends AppCompatActivity implements SurfaceHold
 
     @Override
     public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
-        android.util.Log.d(TAG, "surfaceChanged, holder: " + holder);
-        try {
-            decodeThread = new MediaCodecDecodeThread(extractor, 0, holder.getSurface());
-            decodeThread.start();
-        } catch (IOException e) {
-            e.printStackTrace();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            Log.d(TAG, "surfaceChanged, holder: " + holder);
+            try {
+                AssetFileDescriptor afd = getAssets().openFd("video.mp4");
+                decodeThread = new MediaCodecVDecodeThread(afd, 0, holder.getSurface());
+                afd.close();
+                afd = getAssets().openFd("video.mp4");
+                audioThread = new MediaCodecADecodeThread(afd, 1);
+                afd.close();
+                decodeThread.start();
+                audioThread.start();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
